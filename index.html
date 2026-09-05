@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAZ 精读记录</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="library-page">
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📚</span>
+      <h1>RAZ 精读记录</h1>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="library">书库</button>
+      <button class="tab" data-tab="plan">精读计划</button>
+      <button class="tab" data-tab="stats">进度统计</button>
+      <button class="tab" data-tab="settings">设置</button>
+    </nav>
+  </header>
+
+  <main>
+    <!--  书库  -->
+    <section class="view active" id="view-library">
+      <div class="toolbar">
+        <div class="filters">
+          <label>等级:
+            <select id="filter-level">
+              <option value="all">全部</option>
+            </select>
+          </label>
+          <label>状态:
+            <select id="filter-status">
+              <option value="all">全部</option>
+              <option value="unread">未读</option>
+              <option value="reading">精读中</option>
+              <option value="done">已完成</option>
+              <option value="review">复习中</option>
+              <option value="skipped">跳过</option>
+            </select>
+          </label>
+          <input type="text" id="search" placeholder="搜索书名..." />
+        </div>
+        <div class="view-mode">
+          <button class="mode-btn active" data-mode="grid">网格</button>
+          <button class="mode-btn" data-mode="list">列表</button>
+        </div>
+      </div>
+      <div id="book-list" class="book-grid"></div>
+    </section>
+
+    <!--  精读计划  -->
+    <section class="view" id="view-plan">
+      <div class="plan-setup card">
+        <h2>📅 计划设置</h2>
+        <div class="plan-row">
+          <label>每天阅读量:
+            <input type="number" id="daily-target" min="1" max="20" value="3" />
+            本
+          </label>
+          <label>每周阅读日:
+            <div class="weekdays">
+              <label><input type="checkbox" value="1" checked>一</label>
+              <label><input type="checkbox" value="2" checked>二</label>
+              <label><input type="checkbox" value="3" checked>三</label>
+              <label><input type="checkbox" value="4" checked>四</label>
+              <label><input type="checkbox" value="5" checked>五</label>
+              <label><input type="checkbox" value="6">六</label>
+              <label><input type="checkbox" value="0">日</label>
+            </div>
+          </label>
+          <label>起始等级:
+            <select id="start-level"></select>
+          </label>
+          <button id="save-plan" class="btn primary">保存计划</button>
+        </div>
+      </div>
+
+      <div class="plan-today card">
+        <h2>🎯 今日精读（<span id="today-date"></span>）</h2>
+        <div id="today-list"></div>
+      </div>
+
+      <div class="plan-next card">
+        <h2>📖 下一阶段</h2>
+        <div id="next-stage"></div>
+      </div>
+    </section>
+
+    <!--  统计  -->
+    <section class="view" id="view-stats">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">总书数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-done">0</div>
+          <div class="stat-label">已完成</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-rate">0%</div>
+          <div class="stat-label">完成率</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-streak">0</div>
+          <div class="stat-label">连续天数</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>各等级进度</h2>
+        <div id="level-progress"></div>
+      </div>
+      <div class="card">
+        <h2>近期活动</h2>
+        <div id="recent-activity"></div>
+      </div>
+    </section>
+
+    <!--  设置  -->
+    <section class="view" id="view-settings">
+      <div class="card">
+        <h2>💾 数据管理</h2>
+        <p class="hint">所有进度数据保存在浏览器本地存储（localStorage）。建议定期导出备份。</p>
+        <div class="btn-row">
+          <button id="export-data" class="btn">📤 导出进度（JSON）</button>
+          <button id="import-data" class="btn">📥 导入进度</button>
+          <input type="file" id="import-file" accept=".json" hidden />
+          <button id="reset-data" class="btn danger">🗑 重置所有进度</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>📂 书单导入</h2>
+        <p class="hint">已自动扫描 <code id="book-count">0</code> 本。解压 J-Z2.zip 后点击重新扫描。</p>
+        <div class="btn-row">
+          <button id="rescan-books" class="btn">🔄 重新扫描视频文件</button>
+          <button id="reload-books" class="btn">📋 加载书单（需服务文件访问）</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>👤 孩子信息</h2>
+        <div class="plan-row">
+          <label>名字: <input type="text" id="child-name" placeholder="小朋友名字" /></label>
+          <label>开始日期: <input type="date" id="start-date" /></label>
+          <button id="save-child" class="btn primary">保存</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => window.RAZ.initLibrary());
+</script>
+</body>
+</html>
