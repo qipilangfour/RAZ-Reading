@@ -13,6 +13,8 @@ const state = {
   positions: {},     // {bookId: seconds}  - 独立存储，避免污染 progress
   settings: {
     dailyTarget: 3,
+    dailyReviewTarget: 2,
+    reviewIntervals: [2, 7, 30],
     weekdays: [1,2,3,4,5],
     startLevel: 'AA',
     childName: '',
@@ -60,6 +62,21 @@ function saveSettings() {
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function parseDate(s) {
+  const [y, m, d] = String(s).split('-').map(Number);
+  return new Date(y, (m||1) - 1, d||1);
+}
+function addDaysStr(s, n) {
+  const d = parseDate(s);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function daysBetween(a, b) {
+  return Math.round((parseDate(b) - parseDate(a)) / 86400000);
+}
+function parseIntervals(s) {
+  return String(s || '').split(/[\s,，]+/).map(Number).filter(n => Number.isInteger(n) && n > 0);
 }
 function formatDate(s) {
   if (!s) return '';
@@ -165,55 +182,68 @@ function renderBookList() {
 }
 
 // ===== 计划页 =====
-function renderPlan() {
-  $('#today-date').textContent = todayStr();
-  $('#daily-target').value = state.settings.dailyTarget;
-  $('#start-level').value = state.settings.startLevel;
-  $$('.weekdays input').forEach(cb => {
-    cb.checked = state.settings.weekdays.includes(+cb.value);
-  });
-  $('#today-list').innerHTML = renderTodayList();
-  renderNextStage();
+const DAY_CN = ['日','一','二','三','四','五','六'];
+
+function autoPlayDates(p) {
+  return (p && p.logs ? p.logs : [])
+    .filter(l => l.type === 'auto')
+    .map(l => l.date)
+    .sort();
 }
 
-function renderTodayList() {
-  const dow = new Date().getDay();
-  if (!state.settings.weekdays.includes(dow)) {
-    return '<div style="color:var(--text-3);padding:10px 0">今天不是精读日 🎉</div>';
+function dayAutoCount(ds) {
+  let n = 0;
+  for (const id in state.progress) {
+    if ((state.progress[id].logs || []).some(l => l.date === ds && l.type === 'auto')) n++;
   }
-  const target = +state.settings.dailyTarget || 3;
-  const recommendations = recommendBooks(target);
-  if (recommendations.length === 0) {
-    return '<div style="color:var(--text-3);padding:10px 0">所有书都已完成 🎉</div>';
-  }
-  return recommendations.map(b => {
-    const p = state.progress[b.id] || {};
-    const status = p.status || 'unread';
-    return `
-      <a class="today-item" href="book.html?id=${encodeURIComponent(b.id)}">
-        <div class="today-info">
-          <span class="badge">${b.level}</span>
-          <span class="book-title" style="font-size:14px">${escapeHtml(b.title)}</span>
-        </div>
-        <span class="status-text status ${status}">${statusLabel(status)}</span>
-      </a>
-    `;
-  }).join('');
+  return n;
 }
 
-function recommendBooks(n) {
-  const startIdx = LEVELS.indexOf(state.settings.startLevel);
-  const candidates = [];
-  for (let i = startIdx; i < LEVELS.length; i++) {
-    const lvl = LEVELS[i];
-    const books = state.books.filter(b => b.level === lvl);
-    for (const b of books) {
-      const status = state.progress[b.id]?.status || 'unread';
-      if (status === 'unread' || status === 'reading') {
-        candidates.push({ ...b, _priority: status === 'reading' ? 0 : 1 });
+// 到期未复习的书：intervals[k] 表示第 k+1 次复习应在第 k+1 次播放后的第 N 天
+function dueReviews(today) {
+  const intervals = (state.settings.reviewIntervals || []).length
+    ? state.settings.reviewIntervals : [2, 7, 30];
+  const out = [];
+  for (const b of state.books) {
+    const p = state.progress[b.id];
+    if (!p || (p.plays || 0) < 1) continue;
+    const events = autoPlayDates(p);
+    for (let k = 0; k < intervals.length; k++) {
+      const prev = events[k] || events[0];
+      const due = addDaysStr(prev, intervals[k]);
+      if (events[k + 1]) continue;               // 这次复习已完成
+      if (today.localeCompare(due) >= 0) {       // 到期且未复习
+        out.push({ book: b, due });
+        break;
       }
     }
   }
+  return out;
+}
+
+// 当前应推进的等级：从起始等级起，第一个还有未读完书的等级
+function currentLevel() {
+  const startIdx = LEVELS.indexOf(state.settings.startLevel);
+  for (let i = startIdx; i < LEVELS.length; i++) {
+    const lvl = LEVELS[i];
+    const has = state.books.some(b => {
+      if (b.level !== lvl) return false;
+      const s = state.progress[b.id]?.status || 'unread';
+      return s === 'unread' || s === 'reading';
+    });
+    if (has) return lvl;
+  }
+  return null;
+}
+
+// 新书阅读队列：只从当前等级取（进行中优先，按顺序），读完本等级再进下一等级
+function recommendBooks(n) {
+  const curLvl = currentLevel();
+  if (!curLvl) return [];
+  const candidates = state.books.filter(b => b.level === curLvl).map(b => {
+    const status = state.progress[b.id]?.status || 'unread';
+    return { ...b, _priority: status === 'reading' ? 0 : 1 };
+  }).filter(c => c._priority === 0 || c._priority === 1);
   candidates.sort((a, b) => {
     if (a._priority !== b._priority) return a._priority - b._priority;
     return (a.seq||0) - (b.seq||0);
@@ -221,45 +251,286 @@ function recommendBooks(n) {
   return candidates.slice(0, n);
 }
 
-function renderNextStage() {
-  const cur = state.progress;
-  const levelsStats = {};
-  for (const b of state.books) {
-    const l = b.level;
-    if (!levelsStats[l]) levelsStats[l] = { total: 0, done: 0 };
-    levelsStats[l].total++;
-    if (cur[b.id]?.status === 'done') levelsStats[l].done++;
+// 今日任务（自动判定：今天有 auto 日志=完成）
+function todayTasks() {
+  const today = todayStr();
+  const t = {
+    restDay: false,
+    newTarget: 0, reviewTarget: 0,
+    newDone: [], newPending: [],
+    reviewDone: [], reviewPending: [],
+  };
+  if (!state.settings.weekdays.includes(new Date().getDay())) { t.restDay = true; return t; }
+  t.newTarget = +state.settings.dailyTarget || 3;
+  t.reviewTarget = +state.settings.dailyReviewTarget || 0;
+
+  // 今天完整播放过的书（所有书，不依赖推荐队列，避免已 done 的书被漏统计）
+  const doneTodayId = new Set();
+  for (const id in state.progress) {
+    if ((state.progress[id].logs || []).some(l => l.date === today && l.type === 'auto')) doneTodayId.add(id);
   }
-  let nextLevel = null;
-  for (const l of LEVELS) {
-    if (!levelsStats[l]) continue;
-    if (levelsStats[l].done < levelsStats[l].total) {
-      nextLevel = l;
-      break;
-    }
+  for (const id of doneTodayId) {
+    const b = state.books.find(x => x.id === id);
+    if (!b) continue;
+    const p = state.progress[id];
+    const firstTime = (p.plays || 0) === 1;   // 第一次完整读完 = 新书；否则 = 复习
+    if (firstTime) t.newDone.push(b);
+    else t.reviewDone.push(b);
   }
-  if (!nextLevel) {
-    $('#next-stage').innerHTML = '<div style="color:var(--success);padding:10px 0">🎉 所有书都完成了！</div>';
+
+  // 到期未复习的书
+  for (const item of dueReviews(today)) {
+    if (!t.reviewDone.some(x => x.id === item.book.id)) t.reviewPending.push(item.book);
+  }
+  // 当前等级待读新书
+  for (const b of recommendBooks(Infinity)) {
+    if (t.newDone.some(x => x.id === b.id)) continue;
+    t.newPending.push(b);
+  }
+  return t;
+}
+
+function renderToday() {
+  const t = todayTasks();
+  if (t.restDay) {
+    $('#today-summary').innerHTML = '<div class="today-rest">今天不是阅读日 🎉 好好休息，明天继续！</div>';
+    $('#today-list').innerHTML = '';
     return;
   }
-  const stat = levelsStats[nextLevel];
-  const remaining = stat.total - stat.done;
-  const daily = +state.settings.dailyTarget || 3;
-  const days = Math.ceil(remaining / Math.max(state.settings.weekdays.length, 1));
-  $('#next-stage').innerHTML = `
-    <div style="padding:10px 0">
-      <div style="margin-bottom:10px">
-        <span style="font-size:18px;font-weight:600">等级 ${nextLevel}</span>
-        <span style="color:var(--text-3);margin-left:10px">已完成 ${stat.done}/${stat.total}</span>
+  $('#today-summary').innerHTML = `
+    <div class="today-summary">
+      <div class="ts-item ${t.newDone.length >= t.newTarget ? 'ok' : ''}">
+        <span class="ts-name">📖 新书精读</span>
+        <span class="ts-count">${t.newDone.length}/${t.newTarget}</span>
       </div>
-      <div class="progress-bar" style="margin-bottom:12px"><div class="fill" style="width:${(stat.done/stat.total*100).toFixed(1)}%"></div></div>
-      <div style="color:var(--text-2);font-size:13px">
-        剩余 <strong>${remaining}</strong> 本 ·
-        按每天 ${daily} 本（每周 ${state.settings.weekdays.length} 天）精读，
-        预计 <strong>${days}</strong> 天完成
+      <div class="ts-item ${t.reviewTarget && t.reviewDone.length >= t.reviewTarget ? 'ok' : ''}">
+        <span class="ts-name">🔄 间隔复习</span>
+        <span class="ts-count">${t.reviewDone.length}/${t.reviewTarget}</span>
       </div>
     </div>
   `;
+
+  // 达到今日目标后不再继续列待读；未达标则列出剩余待读
+  const newSlots = Math.max(t.newTarget - t.newDone.length, 0);
+  const reviewSlots = t.reviewTarget ? Math.max(t.reviewTarget - t.reviewDone.length, 0) : 0;
+  const newPending = t.newDone.length >= t.newTarget ? [] : t.newPending.slice(0, newSlots);
+  const reviewPending = t.reviewDone.length >= t.reviewTarget ? [] : t.reviewPending.slice(0, reviewSlots);
+
+  const curLvl = currentLevel();
+  let html = `<div class="today-tip">当前等级 <strong>${curLvl || '—'}</strong> · 每天最多 ${t.newTarget} 本新书 + ${t.reviewTarget} 本复习，没读完不补，明天的任务自动顺延。</div>`;
+  html += renderTaskGroup('📖 新书精读', newPending, t.newDone, newEmptyMsg(t, true));
+  if (t.reviewTarget > 0 || t.reviewDone.length) {
+    html += renderTaskGroup('🔄 间隔复习', reviewPending, t.reviewDone);
+  }
+  if (!html.includes('task-group')) {
+    html = '<div class="today-done">🎉 今天的任务都完成了！</div>';
+  }
+  $('#today-list').innerHTML = html;
+}
+
+function newEmptyMsg(t, isNew) {
+  if (isNew && !t.newDone.length && !t.newPending.length) return '🎉 全部读完，太棒了';
+  if (isNew && t.newDone.length >= t.newTarget) return '🎉 已达成今日新书目标';
+  return '暂无任务';
+}
+
+function renderTaskGroup(title, pending, done, emptyMsg) {
+  const rows = [];
+  for (const b of done.slice(0, 6)) {
+    rows.push(`
+      <a class="task-item done" href="book.html?id=${encodeURIComponent(b.id)}">
+        <span class="badge">${b.level}</span>
+        <span class="task-title">${escapeHtml(b.title)}</span>
+        <span class="task-check">已完成 ✓</span>
+      </a>`);
+  }
+  if (pending.length) {
+    for (const b of pending) {
+      rows.push(`
+        <a class="task-item todo" href="book.html?id=${encodeURIComponent(b.id)}">
+          <span class="badge">${b.level}</span>
+          <span class="task-title">${escapeHtml(b.title)}</span>
+          <span class="task-go">去学习 →</span>
+        </a>`);
+    }
+  } else if (rows.length === 0) {
+    rows.push(`<div class="tg-empty">${emptyMsg || '暂无任务'}</div>`);
+  }
+  return `<div class="task-group">
+    <div class="task-group-head">${title}<span class="tg-count">待做 ${pending.length}</span></div>
+    ${rows.join('')}
+  </div>`;
+}
+
+// ===== 学习日历 =====
+let _calView = null;
+
+function renderCalendar() {
+  const el = $('#calendar');
+  if (!el) return;
+  if (!_calView) { const now = new Date(); _calView = { y: now.getFullYear(), m: now.getMonth() }; }
+  const v = _calView, y = v.y, m = v.m;
+  const firstDow = new Date(y, m, 1).getDay();
+  const today = todayStr();
+  const startDs = addDaysStr(`${y}-${String(m+1).padStart(2,'0')}-01`, -firstDow);
+  const targetAll = (+state.settings.dailyTarget || 3) + (+state.settings.dailyReviewTarget || 2);
+
+  const cells = [];
+  let metCount = 0;
+  for (let i = 0; i < 42; i++) {
+    const ds = addDaysStr(startDs, i);
+    const d = parseDate(ds);
+    const inMonth = d.getMonth() === m;
+    const cnt = dayAutoCount(ds);
+    const isReadingDay = state.settings.weekdays.includes(d.getDay());
+    const met = inMonth && isReadingDay && cnt >= targetAll;
+    if (met) metCount++;
+    cells.push({ ds, dom: d.getDate(), inMonth, cnt, met, isToday: ds === today });
+  }
+
+  let html = `
+    <div class="cal-head">
+      <button class="cal-nav" id="cal-prev">‹</button>
+      <span class="cal-title">${y}年${m+1}月</span>
+      <button class="cal-nav" id="cal-next">›</button>
+      <span class="cal-met">达标 ${metCount} 天</span>
+    </div>
+    <div class="cal-grid">
+      ${DAY_CN.map(d => `<div class="cal-dow">${d}</div>`).join('')}`;
+  for (const c of cells) {
+    const cls = ['cal-cell'];
+    if (!c.inMonth) cls.push('dim');
+    if (c.cnt > 0) cls.push('read');
+    if (c.met) cls.push('met');
+    if (c.isToday) cls.push('today');
+    html += `<div class="${cls.join(' ')}" data-d="${c.ds}">
+      <span class="cal-day">${c.dom}</span>
+      ${c.cnt > 0 ? `<span class="cal-count">${c.met ? '✓' : c.cnt}</span>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+
+  $('#cal-prev').onclick = () => { v.m--; if (v.m < 0) { v.m = 11; v.y--; } renderCalendar(); $('#cal-detail').innerHTML = ''; };
+  $('#cal-next').onclick = () => { v.m++; if (v.m > 11) { v.m = 0; v.y++; } renderCalendar(); $('#cal-detail').innerHTML = ''; };
+  el.querySelectorAll('.cal-cell[data-d]').forEach(c => {
+    c.onclick = () => renderCalDetail(c.dataset.d);
+  });
+}
+
+function renderCalDetail(ds) {
+  const el = $('#cal-detail');
+  if (!el) return;
+  if (!ds) { el.innerHTML = ''; return; }
+  const booksDone = [];
+  for (const id in state.progress) {
+    if ((state.progress[id].logs || []).some(l => l.date === ds && l.type === 'auto')) {
+      const b = state.books.find(x => x.id === id);
+      if (b) booksDone.push(b);
+    }
+  }
+  if (!booksDone.length) {
+    el.innerHTML = `<div class="cal-detail">📅 ${ds}：当天没有完成记录</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="cal-detail">
+    <div class="cal-detail-head">📅 ${ds} · 完成 ${booksDone.length} 本</div>
+    ${booksDone.map(b => `
+      <a class="cal-book" href="book.html?id=${encodeURIComponent(b.id)}">
+        <span class="badge">${b.level}</span> ${escapeHtml(b.title)}
+      </a>`).join('')}
+  </div>`;
+}
+
+// ===== 里程碑（按实际节奏推算） =====
+function levelStatsMap() {
+  const stats = {};
+  for (const l of LEVELS) stats[l] = { total: 0, done: 0 };
+  for (const b of state.books) {
+    stats[b.level].total++;
+    if (state.progress[b.id]?.status === 'done') stats[b.level].done++;
+  }
+  return stats;
+}
+
+function renderMilestone() {
+  const el = $('#next-stage');
+  if (!el) return;
+  const today = todayStr();
+  const stats = levelStatsMap();
+  const totalBooks = state.books.length;
+  let totalDone = 0;
+  for (const id in state.progress) if (state.progress[id].status === 'done') totalDone++;
+
+  // 近14天：实际阅读日的平均完成量
+  let sum = 0, activeDays = 0;
+  for (let i = 0; i < 14; i++) {
+    const ds = addDaysStr(today, -i);
+    if (!state.settings.weekdays.includes(parseDate(ds).getDay())) continue;
+    const cnt = dayAutoCount(ds);
+    if (cnt > 0) { sum += cnt; activeDays++; }
+  }
+  const rate = activeDays ? sum / activeDays : 0;
+
+  let curLevel = currentLevel();
+  if (!curLevel && totalDone >= totalBooks) {
+    el.innerHTML = '<div class="milestone"><div style="color:var(--success);font-size:16px">🎉 所有书都完成了！</div></div>';
+    return;
+  }
+
+  const goal = (+state.settings.dailyTarget || 3) + (+state.settings.dailyReviewTarget || 2);
+  let html = `<div class="milestone">`;
+
+  if (curLevel) {
+    const st = stats[curLevel];
+    const remaining = st.total - st.done;
+    const expDays = rate > 0 ? Math.ceil(remaining / rate) : null;
+    const expDate = expDays ? formatDate(addDaysStr(today, expDays)) : null;
+    html += `
+      <div class="ms-block">
+        <div class="ms-row">
+          <span class="ms-name">当前等级 <strong>${curLevel}</strong></span>
+          <span class="ms-count">${st.done}/${st.total}</span>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width:${(st.done/st.total*100).toFixed(1)}%"></div></div>
+        <div class="ms-sub">剩余 <strong>${remaining}</strong> 本${expDate ? ` · 按当前节奏预计 <strong>${expDate}</strong> 完成` : ''}</div>
+      </div>`;
+  }
+
+  const rateStr = rate > 0 ? rate.toFixed(1) : '—';
+  html += `
+    <div class="ms-block">
+      <div class="ms-row">
+        <span class="ms-name">📚 总进度</span>
+        <span class="ms-count">${totalDone}/${totalBooks}</span>
+      </div>
+      <div class="progress-bar"><div class="fill ${totalDone>=totalBooks?'done':''}" style="width:${(totalBooks?totalDone/totalBooks*100:0).toFixed(1)}%"></div></div>
+      <div class="ms-sub">完成率 ${(totalBooks?totalDone/totalBooks*100:0).toFixed(1)}%</div>
+    </div>
+    <div class="ms-block ms-rate">
+      <div class="ms-row">
+        <span class="ms-name">📈 实际节奏</span>
+      </div>
+      <div class="ms-sub">近 14 天平均每个阅读日 <strong>${rateStr}</strong> 本，建议每天 ${goal} 本（新书 ${state.settings.dailyTarget||3} + 复习 ${state.settings.dailyReviewTarget||0}）</div>
+    </div>`;
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderPlan() {
+  if (!$('#today-date')) return;
+  $('#today-date').textContent = todayStr();
+  $('#daily-target').value = state.settings.dailyTarget;
+  $('#daily-review').value = state.settings.dailyReviewTarget;
+  $('#review-intervals').value = (state.settings.reviewIntervals || []).join(' ');
+  $('#start-level').value = state.settings.startLevel;
+  $$('.weekdays input').forEach(cb => {
+    cb.checked = state.settings.weekdays.includes(+cb.value);
+  });
+  renderToday();
+  renderCalendar();
+  $('#cal-detail').innerHTML = '';
+  renderMilestone();
 }
 
 // ===== 统计 =====
@@ -342,6 +613,8 @@ function renderSettings() {
   $('#child-name').value = state.settings.childName || '';
   $('#start-date').value = state.settings.startDate || todayStr();
   $('#daily-target').value = state.settings.dailyTarget;
+  $('#daily-review').value = state.settings.dailyReviewTarget;
+  $('#review-intervals').value = (state.settings.reviewIntervals || []).join(' ');
   $('#start-level').value = state.settings.startLevel;
   $$('.weekdays input').forEach(cb => {
     cb.checked = state.settings.weekdays.includes(+cb.value);
@@ -385,6 +658,8 @@ function bindLibraryEvents() {
 
   $('#save-plan').addEventListener('click', () => {
     state.settings.dailyTarget = +$('#daily-target').value;
+    state.settings.dailyReviewTarget = +$('#daily-review').value || 0;
+    state.settings.reviewIntervals = parseIntervals($('#review-intervals').value);
     state.settings.startLevel = $('#start-level').value;
     state.settings.weekdays = Array.from($$('.weekdays input:checked')).map(c => +c.value);
     saveSettings();
