@@ -140,6 +140,9 @@ main {
   transition: all .15s;
   position: relative;
   overflow: hidden;
+  display: block;
+  text-decoration: none;
+  color: inherit;
 }
 .book-card:hover {
   border-color: var(--primary);
@@ -147,10 +150,8 @@ main {
   box-shadow: var(--shadow);
 }
 .book-card.unread { border-left: 3px solid var(--text-3); }
-.book-card.reading { border-left: 3px solid var(--primary); background: var(--reading); }
-.book-card.done { border-left: 3px solid var(--success); background: var(--done); }
-.book-card.review { border-left: 3px solid var(--warning); background: var(--review); }
-.book-card.skipped { border-left: 3px solid var(--danger); background: var(--skipped); opacity: .7; }
+.book-card.reading { border-left: 3px solid var(--primary); }
+.book-card.done { border-left: 3px solid var(--success); }
 
 .book-level {
   display: inline-block;
@@ -182,10 +183,6 @@ main {
 .book-meta .stars { color: var(--warning); letter-spacing: -1px; }
 
 .book-grid.list .book-card {
-  display: grid;
-  grid-template-columns: 60px 1fr 100px 80px 80px;
-  gap: 12px;
-  align-items: center;
   padding: 10px 14px;
 }
 .book-grid.list .book-title { margin: 0; -webkit-line-clamp: 1; }
@@ -201,8 +198,6 @@ main {
 .status.unread { background: var(--unread); color: var(--text-2); }
 .status.reading { background: var(--reading); color: var(--primary); }
 .status.done { background: var(--done); color: var(--success); }
-.status.review { background: var(--review); color: var(--warning); }
-.status.skipped { background: var(--skipped); color: var(--danger); }
 
 .status-text {
   font-size: 12px;
@@ -617,6 +612,84 @@ main {
 }
 .book-page .form-row { margin-bottom: 10px; }
 .book-page .form-row label { min-width: 70px; font-size: 12px; }
+
+/* ===== 笔记：铺满水平方向 ===== */
+#book-notes {
+  display: block;
+  width: 100%;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  box-sizing: border-box;
+}
+#book-notes:focus { outline: none; border-color: var(--primary); }
+
+/* ===== 阅读次数 ===== */
+.plays-val { color: var(--primary); }
+.plays-hint { color: var(--text-3); font-size: 12px; }
+
+/* ===== 点赞 / 转发 ===== */
+.interact-card { display: flex; flex-direction: column; gap: 14px; }
+.interact-bar { display: flex; gap: 10px; }
+.interact-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 24px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-2);
+  transition: all .15s;
+  user-select: none;
+}
+.interact-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--reading); }
+.interact-btn .icon { font-size: 16px; }
+.interact-btn .count { font-weight: 600; color: var(--text-3); }
+.interact-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+.interact-btn.active .count { color: white; }
+
+.comment-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.comment-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.comment-input-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--surface);
+}
+.comment-input-row input:focus { outline: none; border-color: var(--primary); }
+.comment-empty { color: var(--text-3); font-size: 12px; padding: 8px 0; }
+.comment-item {
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.comment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.comment-date { color: var(--text-3); font-size: 11px; }
+.comment-del {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 4px;
+}
+.comment-del:hover { color: var(--danger); }
+.comment-text { font-size: 13px; color: var(--text); word-break: break-word; }
 
 /* ===== 历史记录 ===== */
 #book-logs .empty {

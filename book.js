@@ -28,20 +28,21 @@ function renderHeader() {
 
 function renderForm() {
   const p = getProgress(currentBook.id);
+  p.status = R.normalizeProgress(p).status;
 
   renderStatusField(p.status === 'done');
   if (p.status !== 'done') {
     $('#book-status').value = p.status || 'unread';
   }
-  $('#book-passes').value = p.passes ?? 3;
-  $('#book-mastery').value = p.mastery ?? 0;
-  $('#mastery-val').textContent = (p.mastery ?? 0) + '%';
+  $('#book-plays').textContent = (p.plays || 0) + ' 次';
+  $('#book-mastery').value = p.mastery ?? '';
   $('#book-start').value = p.startDate || '';
   $('#book-notes').value = p.notes || '';
 
   renderCompletionInfo();
   setStars(p.rating || 0);
   renderLogs(p.logs || []);
+  renderInteractions();
 }
 
 function renderStatusField(isDone) {
@@ -106,6 +107,59 @@ function renderLogs(logs) {
       renderLogs(p.logs);
     };
   });
+}
+
+// ===== 点赞 / 转发 / 评论 =====
+function renderInteractions() {
+  if (!$('#btn-like')) return;
+  const p = getProgress(currentBook.id);
+  const liked = !!p.liked;
+  const forwards = p.forwards || 0;
+
+  $('#btn-like').classList.toggle('active', liked);
+  $('#like-label').textContent = liked ? '已赞' : '点赞';
+  $('#like-count').textContent = liked ? 1 : 0;
+  $('#forward-count').textContent = forwards;
+
+  const list = $('#comment-list');
+  const comments = p.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<div class="comment-empty">暂无评论，快来抢沙发～</div>';
+    return;
+  }
+  list.innerHTML = comments.map((c, i) => `
+    <div class="comment-item">
+      <div class="comment-head">
+        <span class="comment-date">${escapeHtml(c.date)}</span>
+        <button title="删除" data-i="${i}" class="comment-del">✕</button>
+      </div>
+      <div class="comment-text">${escapeHtml(c.text)}</div>
+    </div>
+  `).join('');
+  list.querySelectorAll('.comment-del').forEach(btn => {
+    btn.onclick = () => {
+      const i = +btn.dataset.i;
+      const p = getProgress(currentBook.id);
+      p.comments.splice(i, 1);
+      saveProgress();
+      renderInteractions();
+    };
+  });
+}
+
+function addComment() {
+  const input = $('#comment-input');
+  const text = input.value.trim();
+  if (!text) { flash('评论不能为空'); return; }
+  const p = getProgress(currentBook.id);
+  p.comments = p.comments || [];
+  const now = new Date();
+  const stamp = `${todayStr()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  p.comments.unshift({ date: stamp, text });
+  saveProgress();
+  input.value = '';
+  renderInteractions();
+  flash('评论已发表');
 }
 
 function setupVideo() {
@@ -190,39 +244,27 @@ function autoMarkComplete() {
   p.status = 'done';
   p.doneDate = today;
   p.doneAt = time;
+  p.plays = (p.plays || 0) + 1;    // 完整播放次数 +1
   if (!p.startDate) p.startDate = today;
   p.updatedAt = today;
 
   p.logs = p.logs || [];
-  if (!wasDone) {
-    p.logs.unshift({
-      date: today,
-      type: 'auto',
-      note: '视频播放完整，自动标记完成',
-    });
-  } else {
-    p.logs.unshift({
-      date: today,
-      type: 'auto',
-      note: '再次完整观看',
-    });
-  }
+  p.logs.unshift({
+    date: today,
+    type: 'auto',
+    note: wasDone ? `再次完整观看（第 ${p.plays} 次）` : '视频播放完整，自动标记完成',
+  });
 
   saveProgress();
   renderForm();
-  flash(wasDone ? '🎉 已记录再次观看' : '🎉 已自动标记为完成！');
+  flash(wasDone ? `🎉 已记录观看（共 ${p.plays} 次）` : '🎉 已自动标记为完成！');
 }
 
 // ===== 表单事件 =====
 function bindFormEvents() {
-  // 状态变更（人工不能设 done）
+  // 状态变更（未读/进行中，人工不能设 done）
   $('#book-status').addEventListener('change', e => {
-    let v = e.target.value;
-    if (v === 'done') {
-      flash('完成需通过视频播放完整自动标记');
-      e.target.value = getProgress(currentBook.id).status === 'done' ? 'review' : 'reading';
-      return;
-    }
+    const v = e.target.value;
     const p = getProgress(currentBook.id);
     p.status = v;
     if (v === 'reading' && !p.startDate) p.startDate = todayStr();
@@ -245,20 +287,10 @@ function bindFormEvents() {
     $$('#book-stars span').forEach(el => el.style.color = '');
   });
 
-  // 精读次数
-  $('#book-passes').addEventListener('change', e => {
-    const p = getProgress(currentBook.id);
-    p.passes = +e.target.value;
-    saveProgress();
-  });
-
-  // 掌握度
-  $('#book-mastery').addEventListener('input', e => {
-    $('#mastery-val').textContent = e.target.value + '%';
-  });
+  // 掌握度（人工评级）
   $('#book-mastery').addEventListener('change', e => {
     const p = getProgress(currentBook.id);
-    p.mastery = +e.target.value;
+    p.mastery = e.target.value || '';
     saveProgress();
   });
 
@@ -280,20 +312,27 @@ function bindFormEvents() {
     }, 800);
   });
 
-  // 添加日志
-  $('#log-add').addEventListener('click', () => {
-    const date = $('#log-date').value || todayStr();
-    const type = $('#log-status').value;
-    const note = $('#log-note').value.trim();
+  // 点赞 / 转发 / 评论
+  $('#btn-like').addEventListener('click', () => {
     const p = getProgress(currentBook.id);
-    p.logs = p.logs || [];
-    p.logs.unshift({ date, type, note });
+    p.liked = !p.liked;
     saveProgress();
-    renderLogs(p.logs);
-    $('#log-note').value = '';
-    $('#log-date').value = '';
+    renderInteractions();
+    flash(p.liked ? '👍 已点赞' : '已取消点赞');
   });
-  $('#log-date').value = todayStr();
+
+  $('#btn-forward').addEventListener('click', () => {
+    const p = getProgress(currentBook.id);
+    p.forwards = (p.forwards || 0) + 1;
+    saveProgress();
+    renderInteractions();
+    flash('🔁 已转发');
+  });
+
+  $('#comment-add').addEventListener('click', addComment);
+  $('#comment-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addComment();
+  });
 
   // 全屏按钮（备用，controls 已经自带，但显式提供以提升可见性）
   $('#btn-fullscreen')?.addEventListener('click', () => {

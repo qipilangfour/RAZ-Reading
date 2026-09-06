@@ -30,6 +30,26 @@
       <div class="video-tip">
         💡 视频播放完成后会自动标记为「已完成」· 控件中包含全屏按钮
       </div>
+
+      <!-- 点赞 / 转发 / 评论 -->
+      <div class="interact-card card">
+        <div class="interact-bar">
+          <button id="btn-like" class="interact-btn" title="点赞">
+            <span class="icon">👍</span><span class="label" id="like-label">点赞</span><span class="count" id="like-count">0</span>
+          </button>
+          <button id="btn-forward" class="interact-btn" title="转发">
+            <span class="icon">🔁</span><span class="label">转发</span><span class="count" id="forward-count">0</span>
+          </button>
+        </div>
+        <div class="comment-section">
+          <h3>💬 评论</h3>
+          <div class="comment-input-row">
+            <input type="text" id="comment-input" placeholder="写下你的评论..." maxlength="500" />
+            <button id="comment-add" class="btn primary">发表</button>
+          </div>
+          <div id="comment-list"></div>
+        </div>
+      </div>
     </section>
 
     <!-- 右侧：记录 -->
@@ -46,9 +66,7 @@
           <div id="status-wrap" style="flex:1">
             <select id="book-status" style="width:100%">
               <option value="unread">未读</option>
-              <option value="reading">精读中</option>
-              <option value="review">复习中</option>
-              <option value="skipped">跳过</option>
+              <option value="reading">进行中</option>
             </select>
           </div>
           <div id="status-done-label" class="status done" style="display:none;padding:6px 10px">已完成</div>
@@ -61,13 +79,19 @@
           </div>
         </div>
         <div class="form-row">
-          <label>精读次数:</label>
-          <input type="number" id="book-passes" min="1" max="20" value="3" />
+          <label>阅读次数:</label>
+          <span id="book-plays" class="plays-val" style="font-size:14px;font-weight:600">0 次</span>
+          <span class="plays-hint">(自动记录，完整播放一遍 +1)</span>
         </div>
         <div class="form-row">
           <label>掌握度:</label>
-          <input type="range" id="book-mastery" min="0" max="100" value="0" />
-          <span id="mastery-val">0%</span>
+          <select id="book-mastery" style="width:100%">
+            <option value="">未评定</option>
+            <option value="1">生疏</option>
+            <option value="2">一般</option>
+            <option value="3">熟练</option>
+            <option value="4">精通</option>
+          </select>
         </div>
         <div class="form-row">
           <label>开始日期:</label>
@@ -81,26 +105,9 @@
         <textarea id="book-notes" rows="4" placeholder="生词、难点、表现、复习要点..."></textarea>
       </div>
 
-      <!-- 添加精读记录 -->
-      <div class="card">
-        <h2>➕ 新增精读记录</h2>
-        <div class="log-row">
-          <input type="date" id="log-date" />
-          <select id="log-status">
-            <option value="read">精读一遍</option>
-            <option value="review">复习一遍</option>
-            <option value="test">听写/测试</option>
-          </select>
-        </div>
-        <div class="log-row" style="margin-top:8px">
-          <input type="text" id="log-note" placeholder="备注（可选）" style="flex:1" />
-          <button id="log-add" class="btn primary">记录</button>
-        </div>
-      </div>
-
       <!-- 历史记录 -->
       <div class="card">
-        <h2>📜 历史记录</h2>
+        <h2>📜 阅读历史</h2>
         <div id="book-logs"></div>
       </div>
     </aside>

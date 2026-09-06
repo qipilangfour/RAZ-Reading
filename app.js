@@ -29,7 +29,10 @@ const $$ = (sel) => document.querySelectorAll(sel);
 function loadProgress() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) state.progress = JSON.parse(raw);
+    if (raw) {
+      state.progress = JSON.parse(raw);
+      for (const id in state.progress) state.progress[id] = normalizeProgress(state.progress[id]);
+    }
   } catch(e) { console.warn('loadProgress failed', e); }
 }
 function saveProgress() {
@@ -68,7 +71,14 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function statusLabel(s) {
-  return { unread:'未读', reading:'精读中', done:'已完成', review:'复习中', skipped:'跳过' }[s] || s;
+  return { unread:'未读', reading:'进行中', done:'已完成' }[s] || s;
+}
+
+// 迁移旧状态（review/skipped -> unread），三态：unread/reading/done
+function normalizeProgress(p) {
+  if (!p) return p;
+  if (p.status === 'review' || p.status === 'skipped') p.status = 'unread';
+  return p;
 }
 
 // ===== 书单加载 =====
@@ -105,6 +115,9 @@ function guessVideoUrl(book) {
   return base + encodeURIComponent(dir) + '/' + encodeURIComponent(book.file);
 }
 
+// ===== 掌握度等级 =====
+const MASTERY_LABELS = { 1:'生疏', 2:'一般', 3:'熟练', 4:'精通' };
+
 // ===== 渲染：书库 =====
 function getFilteredBooks() {
   return state.books.filter(b => {
@@ -136,6 +149,7 @@ function renderBookList() {
     const p = state.progress[b.id] || {};
     const status = p.status || 'unread';
     const stars = p.rating ? '★'.repeat(p.rating) + '☆'.repeat(5-p.rating) : '';
+    const masteryLabel = p.mastery ? (MASTERY_LABELS[p.mastery] || '') : '';
     return `
       <a class="book-card ${status}" href="book.html?id=${encodeURIComponent(b.id)}">
         <span class="book-level">${b.level}</span>
@@ -144,7 +158,7 @@ function renderBookList() {
           <span class="status-text status ${status}">${statusLabel(status)}</span>
           ${stars ? `<span class="stars">${stars}</span>` : ''}
         </div>
-        ${p.mastery ? `<div class="book-meta" style="margin-top:4px"><span style="font-size:11px;color:var(--text-3)">掌握 ${p.mastery}%</span></div>` : ''}
+        ${masteryLabel ? `<div class="book-meta" style="margin-top:4px"><span style="font-size:11px;color:var(--text-2)">掌握 · ${masteryLabel}</span></div>` : ''}
       </a>
     `;
   }).join('');
@@ -495,7 +509,8 @@ async function initLibrary() {
 window.RAZ = {
   state, $, $$, loadProgress, saveProgress, loadPositions, savePositions,
   loadSettings, saveSettings, loadBooks, todayStr, formatDate, escapeHtml,
-  statusLabel, guessVideoUrl, flash, LEVELS,
+  statusLabel, guessVideoUrl, flash, LEVELS, normalizeProgress,
+  MASTERY_LABELS,
   initLibrary, bindLibraryEvents, renderBookList,
 };
 })();
